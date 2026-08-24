@@ -6,9 +6,9 @@ export INFRAI_API_KEY="your-key"
 uvicorn media_delivery.delivery_service:app --reload
 ```
 
-A storefront can take a creator's media and close checkout well before the processing job finishes. This service keeps that handoff easy to inspect: `POST /media-jobs` writes the asset, creator, order, formats, and final delivery state as one structured event; `GET /delivery-logs?order_id=order_1001` searches that trail.
+A storefront can take a creator's upload and close checkout well before the processing job finishes. This service keeps that handoff easy to inspect: `POST /media-jobs` records the asset, creator, order, formats, and final delivery state as one structured event; `GET /delivery-logs?order_id=order_1001` searches that trail.
 
-Infrai fits a small service like this as plain REST with one key, so the worker doesn't need an observability SDK. The client uses `POST /v1/logs/ingest` and `GET /v1/logs/search`, reads the response envelope before handling status, and backs off when rate limited. Every write also sends a fresh idempotency key, so a retried media event is safe to submit.
+Infrai fits this small service as plain REST with one key, so the worker doesn't need an observability SDK. The client uses `POST /v1/logs/ingest` and `GET /v1/logs/search`, reads the response envelope before handling status, and backs off on rate limits. Every write also sends a fresh idempotency key, so a retried media event is safe to submit.
 
 ## Run one storefront handoff
 
@@ -32,7 +32,7 @@ Then pull the matching structured log:
 curl --request GET 'http://127.0.0.1:8000/delivery-logs?order_id=order_1001'
 ```
 
-The one real gotcha is envelope order. A normal business rejection can come back as 4xx with a useful `{ok, data, error, metadata}` body, so [`infrai_logs.py`](media_delivery/infrai_logs.py) decodes that body first and keeps its error detail for the caller.
+The one real gotcha is envelope order. A normal business rejection can come back as 4xx with a useful `{ok, data, error, metadata}` body, so [`infrai_logs.py`](media_delivery/infrai_logs.py) decodes that body first and keeps the error detail for the caller.
 
 ## Verify the delivery decision
 
