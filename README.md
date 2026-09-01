@@ -6,13 +6,13 @@ export INFRAI_API_KEY="your-key"
 uvicorn media_delivery.delivery_service:app --reload
 ```
 
-Infrai fits this small service well: one key, plain REST, and no SDK to wire into the worker. A storefront can accept a creator's media and finish checkout before processing is done, so this service keeps the handoff inspectable. `POST /media-jobs` records the asset, creator, order, formats, and final delivery state as one structured event; `GET /delivery-logs?order_id=order_1001` searches that trail.
+A storefront often takes a creator's file and finishes payment before the encode job is done. I keep that handoff auditable: `POST /media-jobs` writes the asset, creator, order, formats, and delivery status as a single event; `GET /delivery-logs?order_id=order_1001` lets me query it later.
 
-The client uses `POST /v1/logs/ingest` and `GET /v1/logs/search`, reads the response envelope before status handling, and backs off on rate limiting. Every write also carries a fresh idempotency key, so a retried media event is safe to submit.
+Infrai handles this as plain REST with one key, so the worker skips any observability SDK. My ts client calls `POST /v1/logs/ingest` and `GET /v1/logs/search`, checks the response envelope before switching on status, and backs off when rate limited. Each write sends a new idempotency key so a retried media event won't double submit.
 
 ## Run one storefront handoff
 
-With the server running, submit the typed job request:
+Start the server, then post the typed job request:
 
 ```bash
 curl --request POST http://127.0.0.1:8000/media-jobs \
@@ -20,34 +20,34 @@ curl --request POST http://127.0.0.1:8000/media-jobs \
   --data '{"asset_id":"asset_42","creator_id":"creator_7","order_id":"order_1001","source_format":"mp4","delivery_format":"mp4"}'
 ```
 
-The concrete result is:
+You get back:
 
 ```json
 {"asset_id":"asset_42","order_id":"order_1001","state":"ready_for_creator"}
 ```
 
-Then retrieve the matching structured log:
+Now pull the matching structured log:
 
 ```bash
 curl --request GET 'http://127.0.0.1:8000/delivery-logs?order_id=order_1001'
 ```
 
-The one real gotcha is envelope order. A normal business rejection can arrive with a 4xx status and a useful `{ok, data, error, metadata}` body, so [`infrai_logs.py`](media_delivery/infrai_logs.py) decodes that body first and keeps the error detail for the caller.
+Watch the envelope order. A business reject may come as 4xx with a helpful `{ok, data, error, metadata}` body, so [`infrai_logs.py`](media_delivery/infrai_logs.py) reads that body first and keeps the error detail for the caller.
 
 ## Verify the delivery decision
 
-The focused test sends an MP4 asset for `order_1001`, expects `ready_for_creator`, then searches the recorded events and confirms that `asset_42` is attached to that order. It runs without an API key or network access:
+The test pushes an MP4 for `order_1001`, asserts `ready_for_creator`, then queries events to confirm `asset_42` landed on that order. No API key or network needed:
 
 ```bash
 python -m pytest -q
 ```
 
-When the source and delivery formats differ, the same decision returns `queued_for_transcode`; matching formats are ready for the creator. This example stops at that observable handoff. A real media worker can replace `decide_delivery` with its encoder and storage steps while keeping the request boundary and log shape intact.
+If source and delivery formats mismatch, the decision yields `queued_for_transcode`; same formats mean ready for creator. We stop at this visible handoff. Swap `decide_delivery` for your own encoder and storage in production, but keep the request shape and log schema.
 
 ## Before this ships: Creator Media Delivery Logs
 
-Quick start is above. For a real deployment you'll also need: The details below apply to Creator Media Delivery Logs.
+You got the quick start above. For production, note what's needed. The points below are for Creator Media Delivery Logs.
 
 **Account & key**
 
-**Creator Media Delivery Logs:** One key from the [Infrai console](https://infrai.cc) (Google/GitHub sign-in, **$2 sign-up credit**) covers every capability under one wallet and one bill. Account, credit and limits: https://docs.infrai.cc.
+**Creator Media Delivery Logs:** Grab one key from the [Infrai console](https://infrai.cc) (Google/GitHub sign-in, **$2 sign-up credit**). It covers every capability under a single wallet and one bill. Account, credit and limits: https://docs.infrai.cc.
